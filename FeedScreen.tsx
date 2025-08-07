@@ -1,24 +1,33 @@
-import React, { useRef, useState, useCallback } from 'react';
-import { View, FlatList, StyleSheet, Dimensions, Text, TouchableWithoutFeedback, Pressable } from 'react-native';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { View, FlatList, StyleSheet, Dimensions, Text, TouchableWithoutFeedback, Pressable, ActivityIndicator } from 'react-native';
 import Video, { VideoRef } from 'react-native-video';
+import { useSelector } from 'react-redux';
+import { fetchVideos } from './videoSlice';
+import { useAppDispatch } from './store';
+import type { RootState } from './store';
 
-const NUM_VIDEOS = 1000;
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// Example public vertical video URLs (use the same for all for demo, replace with real links as needed)
-const SAMPLE_VIDEO_URL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4'; // Not strictly 9:16, but public domain for demo
-
-const videos = Array.from({ length: NUM_VIDEOS }, (_, i) => ({
-  id: i.toString(),
-  title: `Video #${i + 1}`,
-  url: SAMPLE_VIDEO_URL,
-}));
 
 const FeedScreen = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [pausedMap, setPausedMap] = useState<{ [key: string]: boolean }>({});
   const [progressMap, setProgressMap] = useState<{ [key: string]: number }>({});
   const videoRefs = useRef<{ [key: string]: VideoRef | null }>({});
+  const dispatch = useAppDispatch();
+  const { videos, loading, error, page, hasMore } = useSelector<RootState, RootState['videos']>(state => state.videos);
+
+  useEffect(() => {
+    if (videos.length === 0) {
+      dispatch(fetchVideos(1));
+    }
+  }, [dispatch]);
+
+  const loadMore = useCallback(() => {
+    if (!loading && hasMore) {
+      dispatch(fetchVideos(page));
+    }
+  }, [dispatch, loading, hasMore, page]);
+
   const viewabilityConfig = { itemVisiblePercentThreshold: 80 };
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
@@ -53,23 +62,42 @@ const FeedScreen = () => {
     return (
       <View style={styles.videoContainer}>
         <View style={styles.videoWrapper}>
-          <Video
-            ref={ref => { videoRefs.current[item.id] = ref; }}
-            source={{ uri: item.url }}
-            style={styles.video}
-            resizeMode="cover"
-            repeat={false}
-            paused={!isCurrent || isPaused}
-            muted
-            ignoreSilentSwitch="obey"
-            playInBackground={false}
-            playWhenInactive={false}
-            posterResizeMode="cover"
-            onProgress={({ currentTime }) => {
-              if (isCurrent && !isPaused) handleProgress(item.id, currentTime);
-            }}
-            onEnd={() => setPausedMap(prev => ({ ...prev, [item.id]: true }))}
-          />
+          {item.url ? (
+            <Video
+              ref={ref => { videoRefs.current[item.id] = ref; }}
+              source={{ uri: item.url }}
+              style={styles.video}
+              resizeMode="cover"
+              repeat={false}
+              paused={!isCurrent || isPaused}
+              muted
+              ignoreSilentSwitch="obey"
+              playInBackground={false}
+              playWhenInactive={false}
+              posterResizeMode="cover"
+              onProgress={({ currentTime }) => {
+                if (isCurrent && !isPaused) handleProgress(item.id, currentTime);
+              }}
+              onEnd={() => setPausedMap(prev => ({ ...prev, [item.id]: true }))}
+              onError={err => {
+                console.error('Video error', item.url, err);
+                setPausedMap(prev => ({ ...prev, [item.id]: true }));
+                setProgressMap(prev => ({ ...prev, [item.id]: 0 }));
+              }}
+              onBuffer={({ isBuffering }) => {
+                if (isBuffering) {
+                  // Optionally, show spinner overlay
+                  // setBuffering(true);
+                } else {
+                  // setBuffering(false);
+                }
+              }}
+            />
+          ) : (
+            <View style={[styles.video, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#222' }]}> 
+              <Text style={{ color: '#fff', fontSize: 16 }}>Video unavailable</Text>
+            </View>
+          )}
           {isCurrent && (
             <View style={styles.centerOverlay} pointerEvents="box-none">
               {isPaused ? (
@@ -95,11 +123,37 @@ const FeedScreen = () => {
   };
 
 
+  if (error) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: 'red', fontSize: 16, marginBottom: 16 }}>Failed to load videos: {error}</Text>
+        <Pressable onPress={() => dispatch(fetchVideos(1))} style={{ padding: 12, backgroundColor: '#222', borderRadius: 8 }}>
+          <Text style={{ color: '#fff' }}>Retry</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (videos.length === 0 && loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#888" />
+        <Text style={{ color: '#888', marginTop: 12 }}>Loading videos...</Text>
+      </View>
+    );
+  }
+
   return (
     <FlatList
       data={videos}
-      renderItem={renderItem}
-      keyExtractor={item => item.id}
+      renderItem={({ item, index }: { item: any; index: number }) => {
+        // Pick best vertical mp4 file (prefer hd, or highest vertical resolution)
+        const verticalFiles = item.video_files.filter((f: any) => f.file_type === 'video/mp4' && f.height > f.width);
+        let bestFile = verticalFiles.find((f: any) => f.quality === 'hd') || verticalFiles.sort((a: any, b: any) => (b.height - a.height))[0] || item.video_files[0];
+        // Pass bestFile.link as url to video player
+        return renderItem({ item: { ...item, url: bestFile?.link || '' }, index });
+      }}
+      keyExtractor={item => String(item.id)}
       pagingEnabled
       showsVerticalScrollIndicator={false}
       snapToAlignment="start"
@@ -115,6 +169,9 @@ const FeedScreen = () => {
       removeClippedSubviews
       onViewableItemsChanged={onViewableItemsChanged}
       viewabilityConfig={viewabilityConfig}
+      onEndReached={loadMore}
+      onEndReachedThreshold={0.5}
+      ListFooterComponent={loading && videos.length > 0 ? <ActivityIndicator style={{ marginVertical: 24 }} size="large" color="#888" /> : null}
     />
   );
 };

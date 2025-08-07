@@ -10,9 +10,12 @@
     "test": "jest"
   },
   "dependencies": {
+    "@reduxjs/toolkit": "^2.8.2",
+    "axios": "^1.11.0",
     "react": "18.3.1",
     "react-native": "0.76.0",
-    "react-native-video": "^6.16.1"
+    "react-native-video": "^6.16.1",
+    "react-redux": "^9.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
