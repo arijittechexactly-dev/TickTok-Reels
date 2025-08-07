@@ -12,6 +12,8 @@ const FeedScreen = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [pausedMap, setPausedMap] = useState<{ [key: string]: boolean }>({});
   const [progressMap, setProgressMap] = useState<{ [key: string]: number }>({});
+  const [overlayVisibleMap, setOverlayVisibleMap] = useState<{ [key: string]: boolean }>({});
+  const overlayTimeouts = useRef<{ [key: string]: NodeJS.Timeout | null }>({});
   const videoRefs = useRef<{ [key: string]: VideoRef | null }>({});
   const dispatch = useAppDispatch();
   const { videos, loading, error, page, hasMore } = useSelector<RootState, RootState['videos']>(state => state.videos);
@@ -35,10 +37,18 @@ const FeedScreen = () => {
     }
   }).current;
 
-  const togglePause = useCallback((id: string) => {
-    console.log('togglePause called for id:', id);
-    setPausedMap(prev => ({ ...prev, [id]: !prev[id] }));
+  const showOverlay = useCallback((id: string) => {
+    setOverlayVisibleMap(prev => ({ ...prev, [id]: true }));
+    if (overlayTimeouts.current[id]) clearTimeout(overlayTimeouts.current[id]!);
+    overlayTimeouts.current[id] = setTimeout(() => {
+      setOverlayVisibleMap(prev => ({ ...prev, [id]: false }));
+    }, 1000);
   }, []);
+
+  const togglePause = useCallback((id: string) => {
+    setPausedMap(prev => ({ ...prev, [id]: !prev[id] }));
+    showOverlay(id);
+  }, [showOverlay]);
 
   const handleProgress = useCallback((id: string, progress: number) => {
     setProgressMap(prev => ({ ...prev, [id]: progress }));
@@ -48,77 +58,80 @@ const FeedScreen = () => {
   const handleReplay = useCallback((id: string) => {
     setPausedMap(prev => ({ ...prev, [id]: false }));
     setProgressMap(prev => ({ ...prev, [id]: 0 }));
+    showOverlay(id);
     // Seek to 0 using ref
     if (videoRefs.current[id]) {
       videoRefs.current[id]?.seek(0);
     }
-  }, []);
+  }, [showOverlay]);
 
-  const renderItem = ({ item, index }: { item: { id: string; title: string; url: string }, index: number }) => {
+  const handleVideoPress = (id: string) => {
+    showOverlay(id);
+  };
+
+  const renderItem = ({ item, index }: { item: { id: string; title: string; url: string; duration: number }, index: number }) => {
     const isCurrent = index === currentIndex;
     const isPaused = pausedMap[item.id] ?? false;
     console.log(`renderItem: id=${item.id}, isCurrent=${isCurrent}, isPaused=${isPaused}`);
     const progress = progressMap[item.id] ?? 0;
     return (
-      <View style={styles.videoContainer}>
-        <View style={styles.videoWrapper}>
-          {item.url ? (
-            <Video
-              ref={ref => { videoRefs.current[item.id] = ref; }}
-              source={{ uri: item.url }}
-              style={styles.video}
-              resizeMode="cover"
-              repeat={false}
-              paused={!isCurrent || isPaused}
-              muted
-              ignoreSilentSwitch="obey"
-              playInBackground={false}
-              playWhenInactive={false}
-              posterResizeMode="cover"
-              onProgress={({ currentTime }) => {
-                if (isCurrent && !isPaused) handleProgress(item.id, currentTime);
-              }}
-              onEnd={() => setPausedMap(prev => ({ ...prev, [item.id]: true }))}
-              onError={err => {
-                console.error('Video error', item.url, err);
-                setPausedMap(prev => ({ ...prev, [item.id]: true }));
-                setProgressMap(prev => ({ ...prev, [item.id]: 0 }));
-              }}
-              onBuffer={({ isBuffering }) => {
-                if (isBuffering) {
-                  // Optionally, show spinner overlay
-                  // setBuffering(true);
-                } else {
-                  // setBuffering(false);
-                }
-              }}
-            />
-          ) : (
-            <View style={[styles.video, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#222' }]}> 
-              <Text style={{ color: '#fff', fontSize: 16 }}>Video unavailable</Text>
-            </View>
-          )}
-          {isCurrent && (
-            <View style={styles.centerOverlay} pointerEvents="box-none">
-              {isPaused ? (
-                progress >= 8 ? (
-                  <Pressable onPress={() => handleReplay(item.id)} style={styles.centerButton}>
-                    <Text style={styles.centerButtonText}>⟳</Text>
-                  </Pressable>
-                ) : (
-                  <Pressable onPress={() => togglePause(item.id)} style={styles.centerButton}>
-                    <Text style={styles.centerButtonText}>▶</Text>
-                  </Pressable>
-                )
-              ) : (
-                <Pressable onPress={() => togglePause(item.id)} style={styles.centerButton}>
-                  <Text style={styles.centerButtonText}>II</Text>
+      <TouchableWithoutFeedback onPress={() => togglePause(item.id)}>
+        <View style={styles.videoContainer}>
+          <View style={styles.videoWrapper}>
+            {item.url ? (
+              <Video
+                ref={ref => { videoRefs.current[item.id] = ref; }}
+                source={{ uri: item.url }}
+                style={styles.video}
+                resizeMode="cover"
+                repeat={false}
+                paused={!isCurrent || isPaused}
+                muted
+                ignoreSilentSwitch="obey"
+                playInBackground={false}
+                playWhenInactive={false}
+                posterResizeMode="cover"
+                onProgress={({ currentTime }) => {
+                  if (isCurrent && !isPaused) handleProgress(item.id, currentTime);
+                }}
+                onEnd={() => setPausedMap(prev => ({ ...prev, [item.id]: true }))}
+                onError={err => {
+                  console.error('Video error', item.url, err);
+                  setPausedMap(prev => ({ ...prev, [item.id]: true }));
+                  setProgressMap(prev => ({ ...prev, [item.id]: 0 }));
+                }}
+                onBuffer={({ isBuffering }) => {
+                  if (isBuffering) {
+                    // Optionally, show spinner overlay
+                    // setBuffering(true);
+                  } else {
+                    // setBuffering(false);
+                  }
+                }}
+              />
+            ) : (
+              <View style={[styles.video, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#222' }]}> 
+                <Text style={{ color: '#fff', fontSize: 16 }}>Video unavailable</Text>
+              </View>
+            )}
+            {/* Show play/pause overlay on tap, and always show replay icon after video ends */}
+            {isCurrent && overlayVisibleMap[item.id] && !(isPaused && progress >= item.duration) && (
+              <View style={styles.centerOverlay} pointerEvents="box-none">
+                <View style={styles.centerButton}>
+                  <Text style={styles.centerButtonText}>{isPaused ? '▶' : 'II'}</Text>
+                </View>
+              </View>
+            )}
+            {isCurrent && (isPaused && progress >= item.duration) && (
+              <View style={styles.centerOverlay} pointerEvents="box-none">
+                <Pressable onPress={() => handleReplay(item.id)} style={styles.centerButton}>
+                  <Text style={styles.centerButtonText}>⟳</Text>
                 </Pressable>
-              )}
-            </View>
-          )}
+              </View>
+            )}
+          </View>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
     );
   };
 
@@ -150,8 +163,8 @@ const FeedScreen = () => {
         // Pick best vertical mp4 file (prefer hd, or highest vertical resolution)
         const verticalFiles = item.video_files.filter((f: any) => f.file_type === 'video/mp4' && f.height > f.width);
         let bestFile = verticalFiles.find((f: any) => f.quality === 'hd') || verticalFiles.sort((a: any, b: any) => (b.height - a.height))[0] || item.video_files[0];
-        // Pass bestFile.link as url to video player
-        return renderItem({ item: { ...item, url: bestFile?.link || '' }, index });
+        // Pass bestFile.link as url and duration to video player
+        return renderItem({ item: { ...item, url: bestFile?.link || '', duration: item.duration }, index });
       }}
       keyExtractor={item => String(item.id)}
       pagingEnabled
@@ -179,19 +192,16 @@ const FeedScreen = () => {
 const styles = StyleSheet.create({
   videoContainer: {
     height: SCREEN_HEIGHT,
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#111',
   },
   videoWrapper: {
+    height: SCREEN_HEIGHT,
     width: '100%',
-    aspectRatio: 9 / 19,
     backgroundColor: '#000',
-    // borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#444',
-    marginVertical: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
