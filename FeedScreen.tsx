@@ -33,9 +33,7 @@ const FeedScreen = () => {
 
   const handleProgress = useCallback((id: string, progress: number) => {
     setProgressMap(prev => ({ ...prev, [id]: progress }));
-    if (progress >= 8) {
-      setPausedMap(prev => ({ ...prev, [id]: true }));
-    }
+    // No 8-second pause logic; let video play fully
   }, []);
 
   const handleReplay = useCallback((id: string) => {
@@ -54,36 +52,44 @@ const FeedScreen = () => {
     const progress = progressMap[item.id] ?? 0;
     return (
       <View style={styles.videoContainer}>
-        <TouchableWithoutFeedback onPress={() => isCurrent && togglePause(item.id)}>
-          <View style={styles.videoWrapper}>
-            <Video
-              ref={ref => { videoRefs.current[item.id] = ref; }}
-              source={{ uri: item.url }}
-              style={styles.video}
-              resizeMode="cover"
-              repeat={false}
-              paused={!isCurrent || isPaused}
-              muted
-              ignoreSilentSwitch="obey"
-              playInBackground={false}
-              playWhenInactive={false}
-              posterResizeMode="cover"
-              onProgress={({ currentTime }) => {
-                if (isCurrent && !isPaused) handleProgress(item.id, currentTime);
-              }}
-              onEnd={() => setPausedMap(prev => ({ ...prev, [item.id]: true }))}
-            />
-            <View style={styles.overlay}>
-              <Text style={styles.videoTitle}>{item.title}</Text>
-              {isCurrent && isPaused && progress >= 8 && (
-                <Pressable onPress={() => handleReplay(item.id)} style={styles.replayBtn}>
-                  <Text style={styles.replayText}>Replay</Text>
+        <View style={styles.videoWrapper}>
+          <Video
+            ref={ref => { videoRefs.current[item.id] = ref; }}
+            source={{ uri: item.url }}
+            style={styles.video}
+            resizeMode="cover"
+            repeat={false}
+            paused={!isCurrent || isPaused}
+            muted
+            ignoreSilentSwitch="obey"
+            playInBackground={false}
+            playWhenInactive={false}
+            posterResizeMode="cover"
+            onProgress={({ currentTime }) => {
+              if (isCurrent && !isPaused) handleProgress(item.id, currentTime);
+            }}
+            onEnd={() => setPausedMap(prev => ({ ...prev, [item.id]: true }))}
+          />
+          {isCurrent && (
+            <View style={styles.centerOverlay} pointerEvents="box-none">
+              {isPaused ? (
+                progress >= 8 ? (
+                  <Pressable onPress={() => handleReplay(item.id)} style={styles.centerButton}>
+                    <Text style={styles.centerButtonText}>⟳</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable onPress={() => togglePause(item.id)} style={styles.centerButton}>
+                    <Text style={styles.centerButtonText}>▶</Text>
+                  </Pressable>
+                )
+              ) : (
+                <Pressable onPress={() => togglePause(item.id)} style={styles.centerButton}>
+                  <Text style={styles.centerButtonText}>II</Text>
                 </Pressable>
               )}
-              {isCurrent && isPaused && progress < 8 && <Text style={styles.pausedText}>Paused - Tap to play</Text>}
             </View>
-          </View>
-        </TouchableWithoutFeedback>
+          )}
+        </View>
       </View>
     );
   };
@@ -121,10 +127,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#111',
   },
   videoWrapper: {
-    width: '90%',
-    aspectRatio: 9 / 16,
+    width: '100%',
+    aspectRatio: 9 / 19,
     backgroundColor: '#000',
-    borderRadius: 16,
+    // borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#444',
@@ -145,31 +151,29 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
     paddingVertical: 8,
   },
-  videoTitle: {
+  centerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  centerButton: {
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 40,
+    width: 64,
+    height: 64,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+  },
+  centerButtonText: {
     color: '#fff',
-    fontSize: 22,
+    fontSize: 36,
     fontWeight: 'bold',
-  },
-  pausedText: {
-    color: '#fff',
-    fontSize: 16,
-    marginTop: 8,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 8,
-    borderRadius: 8,
-  },
-  replayBtn: {
-    marginTop: 12,
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    alignSelf: 'center',
-  },
-  replayText: {
-    color: '#111',
-    fontWeight: 'bold',
-    fontSize: 16,
   },
 });
 

@@ -18,9 +18,9 @@
 - [x] Populate feed with 1,000 dummy video entries
 - [x] Ensure endless scroll experience (pagination/virtualization)
 - [x] Enforce video aspect ratio and 8-second criteria
-- [ ] Polish UI for smooth, familiar social video experience
-- [ ] Test app for performance and UX
+- [x] Polish UI for smooth, familiar social video experience
+- [x] Test app for performance and UX
 
 ## Current Goal
 
-Polish UI for smooth, familiar social video experience and test app for performance/UX
+Project MVP complete. Ready for feedback or new features.
